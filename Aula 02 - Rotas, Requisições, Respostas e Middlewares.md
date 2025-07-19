@@ -161,9 +161,9 @@ app.delete('/usuarios/:id', (req: Request, res: Response): Response => {
 
 Um **middleware** é uma função que roda **entre** a requisição e a resposta. Ele pode:
 
-✔️ Modificar ou validar a requisição
-✔️ Bloquear ou liberar o acesso a certas rotas
-✔️ Adicionar logs, cabeçalhos, etc.
+✔️ Modificar ou validar a requisição   
+✔️ Bloquear ou liberar o acesso a certas rotas   
+✔️ Adicionar logs, cabeçalhos, etc.    
 
 ---
 
