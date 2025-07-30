@@ -44,7 +44,6 @@ Vamos usar o pacote **`mysql2`** (versão moderna do mysql) e fazer as queries "
 
 ```bash
 npm i mysql2
-npm i @types/mysql2 -D
 ```
 
 ---
