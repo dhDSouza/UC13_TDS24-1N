@@ -45,11 +45,11 @@ Crie a seguinte estrutura:
 express-mvc/
 │── src/
 │   ├── models/
-│   │   ├── Usuario.ts
+│   │   ├── User.ts
 │   ├── controllers/
-│   │   ├── usuarioController.ts
+│   │   ├── UserController.ts
 │   ├── routes/
-│   │   ├── usuarioRoutes.ts
+│   │   ├── UserRoutes.ts
 │   ├── server.ts
 │── package.json
 │── tsconfig.json
@@ -61,87 +61,106 @@ express-mvc/
 
 Agora, vamos criar um CRUD básico de usuários.  
 
-## **📦 Model (Usuário) – `models/Usuario.ts`**  
+## **📦 Model (Usuário) – `models/User.ts`**  
 
 ```ts
-export class Usuario {
-  constructor(public id: number, public nome: string, public email: string) {}
+export class User {
+
+    public id: number;
+    public nome: string;
+    public email: string;
+
+    constructor(id: number, nome: string, email: string) {
+        this.id = id;
+        this.nome = nome;
+        this.email = email;
+    }
 }
 
-export const usuarios: Usuario[] = []; // Simulando um "banco de dados" temporário
+export let usuarios: User[] = []; // Simulando o banco de dados com uma lista
 ```
 
 Esse **model** representa um usuário e armazena os dados em um array (como se fosse um banco de dados).  
 
 ---
 
-## **🎯 Controller – `controllers/usuarioController.ts`**  
+## **🎯 Controller – `controllers/UserController.ts`**  
 
 ```ts
-import { Request, Response } from "express";
-import { Usuario, usuarios } from "../models/Usuario";
+import { Request, Response } from "express"
+import { User, usuarios } from "../models/User"
 
-// Criar um novo usuário
-export const criarUsuario = (req: Request, res: Response): Response => {
-  const { id, nome, email } = req.body;
-  const novoUsuario = new Usuario(id, nome, email);
-  usuarios.push(novoUsuario);
-  return res.status(201).json({ mensagem: "Usuário criado com sucesso!", usuario: novoUsuario });
-};
+export class UserController {
 
-// Listar todos os usuários
-export const listarUsuarios = (req: Request, res: Response) => {
-  res.status(200).json(usuarios);
-};
+    createUser(req: Request, res: Response): Response {
+        const { id, nome, email } = req.body;
 
-// Buscar um usuário por ID
-export const buscarUsuarioPorId = (req: Request, res: Response): Response => {
-  const id = Number(req.params.id);
-  const usuario = usuarios.find(u => u.id === id);
-  if (!usuario) return res.status(404).json({ mensagem: "Usuário não encontrado" });
-  return res.status(200).json(usuario);
-};
+        if (!id || !nome || !email) {
+            return res.status(400).json({ mensagem: "Id, nome, email precisam ser informados!" });
+        }
 
-// Atualizar um usuário
-export const atualizarUsuario = (req: Request, res: Response): Response => {
-  const id = Number(req.params.id);
-  const { nome, email } = req.body;
-  const usuario = usuarios.find(u => u.id === id);
-  if (!usuario) return res.status(404).json({ mensagem: "Usuário não encontrado" });
+        const usuario = new User(id, nome, email);
+        usuarios.push(usuario);
 
-  usuario.nome = nome || usuario.nome;
-  usuario.email = email || usuario.email;
-  return res.status(200).json({ mensagem: "Usuário atualizado com sucesso!", usuario });
-};
+        return res.status(201).json({ mensagem: "Usuário criado com sucesso!", usuario: usuario });
 
-// Deletar um usuário
-export const deletarUsuario = (req: Request, res: Response): Response => {
-  const id = Number(req.params.id);
-  const index = usuarios.findIndex(u => u.id === id);
-  if (index === -1) return res.status(404).json({ mensagem: "Usuário não encontrado" });
+    }
 
-  usuarios.splice(index, 1);
-  return res.status(200).json({ mensagem: "Usuário deletado com sucesso!" });
-};
+    listAllUsers(req: Request, res: Response): Response {
+        return res.status(200).json({ users: usuarios });
+    }
+
+    updateUser(req: Request, res: Response): Response {
+        const id: number = Number(req.params.id);
+        const { nome, email } = req.body;
+
+        if (!nome || !email) {
+            return res.status(400).json({ mensagem: "Nome e e-mail são obrigatórios!" })
+        }
+
+        let usuario = usuarios.find(user => user.id === id);
+
+        if (!usuario) return res.status(404).json({ mensagem: "Usuário não encontrado!" })
+
+        usuario.nome = nome;
+        usuario.email = email;
+
+        return res.status(200).json({ mensagem: "Usuário atualizado com sucesso!", usuario_atualizado: usuario })
+    }
+
+    deleteUser(req: Request, res: Response): Response {
+        const id: number = Number(req.params.id);
+
+        let index = usuarios.findIndex(user => user.id === id);
+
+        if (index === -1) {
+            return res.status(404).json({ mensagem: "Usuário não encontrado" })
+        }
+
+        usuarios.splice(index, 1);
+        return res.status(204).send();
+    }
+}
 ```
 
 Esse **Controller** tem funções para **criar, listar, buscar, atualizar e deletar** usuários.  
 
 ---
 
-## **🔗 Rotas – `routes/usuarioRoutes.ts`**  
+## **🔗 Rotas – `routes/UserRoutes.ts`**  
 
 ```ts
 import { Router } from "express";
-import { criarUsuario, listarUsuarios, buscarUsuarioPorId, atualizarUsuario, deletarUsuario } from "../controllers/usuarioController";
+import { UserController } from "../controllers/UserController";
 
 const router = Router();
 
-router.post("/usuarios", criarUsuario);
-router.get("/usuarios", listarUsuarios);
-router.get("/usuarios/:id", buscarUsuarioPorId);
-router.put("/usuarios/:id", atualizarUsuario);
-router.delete("/usuarios/:id", deletarUsuario);
+const controller = new UserController();
+
+router.get('/users', controller.listAllUsers);
+router.post('/users', controller.createUser);
+router.put('/users/:id', controller.updateUser);
+router.delete('/users/:id', controller.deleteUser);
 
 export default router;
 ```
@@ -154,14 +173,18 @@ As **rotas** direcionam as requisições HTTP para os métodos do **Controller**
 
 ```ts
 import express, { Application } from "express";
-import usuarioRoutes from "./routes/usuarioRoutes";
+import userRoutes from "./routes/UserRoutes";
 
 const app: Application = express();
 const PORT: number = 3000;
-app.use(express.json());
-app.use("/api", usuarioRoutes);
 
-app.listen(PORT, () => console.log(`🚀 Servidor rodando em http://localhost:${PORT}`));
+app.use(express.json()); // DEFINE QUE MINHA API TRABALHA COM JSON
+
+app.use(userRoutes); //QUERO UTILIZAR MINHAS ROTAS
+
+app.listen(PORT, () => {
+    console.log(`🚀 Servidor rodando em http://localhost:${PORT}`);
+})
 ```
 
 Agora o servidor Express está pronto para **receber requisições**!  
@@ -172,7 +195,7 @@ Agora o servidor Express está pronto para **receber requisições**!
 
 Use o **Thuner Cliente** para testar os endpoints:  
 
-### **Criar Usuário** – `POST /api/usuarios`  
+### **Criar Usuário** – `POST /users`  
 ```json
 {
   "id": 1,
@@ -181,7 +204,7 @@ Use o **Thuner Cliente** para testar os endpoints:
 }
 ```
 
-### **Listar Usuários** – `GET /api/usuarios`  
+### **Listar Usuários** – `GET /users`  
 Resposta esperada:
 ```json
 [
@@ -193,17 +216,15 @@ Resposta esperada:
 ]
 ```
 
-### **Buscar Usuário por ID** – `GET /api/usuarios/1`  
-Retorna o usuário com ID **1**.  
-
-### **Atualizar Usuário** – `PUT /api/usuarios/1`  
+### **Atualizar Usuário** – `PUT /users/1`  
 ```json
 {
-  "nome": "Daniel Atualizado"
+  "nome": "Daniel Atualizado",
+  "email": "email@atualizado.com"
 }
 ```
 
-### **Deletar Usuário** – `DELETE /api/usuarios/1`  
+### **Deletar Usuário** – `DELETE /users/1`  
 Remove o usuário **1** da lista.  
 
 ---
