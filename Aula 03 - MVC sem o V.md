@@ -233,7 +233,7 @@ Remove o usuário **1** da lista.
 
 1️⃣ **Crie um Model e um Controller para "Produtos"**.  
 2️⃣ **Separe a lógica dos produtos seguindo o padrão MVC**.  
-3️⃣ **Teste as novas rotas usando o Postman**.  
+3️⃣ **Teste as novas rotas usando o Thunder Client**.  
 
 ---
 
