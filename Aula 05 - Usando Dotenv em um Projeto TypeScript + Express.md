@@ -1,4 +1,4 @@
-# 🌱 **Mini Aula: Usando Dotenv em um Projeto TypeScript + Express**
+# 🌱 **Aula 5: Usando Dotenv em um Projeto TypeScript + Express**
 
 ## 🎯 Objetivo
 
