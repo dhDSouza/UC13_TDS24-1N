@@ -64,7 +64,7 @@ Instalar dependências:
 ```bash
 npm init -y
 npm install express typeorm reflect-metadata mysql2 dotenv
-npm install -D typescript @types/express @types/node
+npm install -D typescript ts-node-dev @types/express @types/node
 ```
 
 Configurar transpilador do TypeScript:
