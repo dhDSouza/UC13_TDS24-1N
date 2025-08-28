@@ -94,8 +94,8 @@ HMACSHA256(
 ## 🛠️ 4. Instalando as dependências
 
 ```bash
-npm install jsonwebtoken
-npm install @types/jsonwebtoken -D
+npm i jsonwebtoken
+npm i @types/jsonwebtoken -D
 ```
 
 ---
@@ -129,123 +129,257 @@ export function verifyToken(token: string): JwtPayload | string {
 
 ---
 
+## 📦 Exemplo de Model
+
+```ts
+import { Entity, PrimaryGeneratedColumn, Column, OneToMany, BeforeInsert, BeforeUpdate, AfterLoad } from "typeorm";
+import * as bcrypt from "bcryptjs";
+import { Post } from "./Post";
+
+@Entity("users") // Informa para o ORM que essa classe será uma Entidade do Banco de Dados
+export class User {
+  @PrimaryGeneratedColumn() // Define que o campo será uma Chave Primária (PK) e Auto Incrementável (AI)
+  id!: number;
+
+  @Column({ length: 100, nullable: false }) // Define que o tamanho do campo é de 100 caracteres, e não pode ser nulo.
+  name: string;
+
+  @Column({ unique: true }) // Define que o campo é Único (UK)
+  email: string;
+
+  @Column({ length: 255, nullable: false })
+  password: string;
+
+  private originalPassword!: string;
+
+  @Column({ type: "enum", enum: ['admin', 'user', 'hacker'], nullable: false, default: 'user' })
+  role: string;
+
+  @BeforeInsert()
+  @BeforeUpdate()
+  private async hashPassword(): Promise<void> {
+    if (this.password && this.password !== this.originalPassword) {
+      const salt = await bcrypt.genSalt(10);
+      this.password = await bcrypt.hash(this.password, salt);
+    }
+  }
+
+  @AfterLoad()
+  private setPreviousPassword() {
+    this.originalPassword = this.password;
+  }
+
+  /*
+        - Indica para o ORM que existe uma relação de 1 para Muitos (1:N) com a Entidade Posts.
+        - Essa Relação será indicada da outra entidade também, e o ORM irá criar a Chave Estrangeira (FK) automaticamente.
+        - Essa prática é extremamente importante para que possam ser realizadas consultas em múltiplas tabelas posteriormente.
+    */
+  @OneToMany(() => Post, (post) => post.user)
+  posts?: Post[];
+
+  constructor(name: string, email: string, password: string, role: string = "user") {
+    this.name = name;
+    this.email = email;
+    this.password = password;
+    this.role = role;
+  }
+}
+```
+
+---
+
 ## 👤 Exemplo de uso no Controller
 
 ### 📁 `UserController.ts`
 
 ```ts
 import { Request, Response } from "express";
-import { UserRepository } from "../repositories/UserRepository";
-import bcrypt from "bcryptjs";
-import { generateToken } from "../auth";
+import { AppDataSource } from "../config/data-source";
+import { User } from "../models/User";
+import * as bcrypt from "bcryptjs";
+import { generateToken } from "../config/auth";
 
-const repo = new UserRepository();
+const userRepository = AppDataSource.getRepository(User);
 
 export class UserController {
-  static async register(req: Request, res: Response): Promise<Response> {
+  // Listar todos os usuários com posts (GET /users)
+  /*
+  SELECT * FROM users 
+  LEFT JOIN posts ON users.id = posts.userId 
+  ORDER BY users.id ASC
+*/
+  // Lista todos os usuários e os seus posts (se não tiver post retorna null)
+  async list(req: Request, res: Response): Promise<Response> {
     try {
-      const { name, email, password, phone, role } = req.body;
+      const users = await userRepository.find({
+        relations: ["posts"],
+        order: { id: "ASC" },
+      });
+      return res.status(200).json(users);
+    } catch (error) {
+      console.error("Internal server error.\nError: ", error);
+      return res.status(500).json({ message: "Internal server error" });
+    }
+  }
 
-      const existing = await repo.findUserByEmail(email);
-      if (existing) {
-        return res.status(400).json({ message: "Email já em uso." });
+  // Obter um usuário específico (GET /users/:id)
+  /*
+  SELECT * FROM users 
+  LEFT JOIN posts ON users.id = posts.userId 
+  WHERE users.id = ?
+*/
+  // Retorna um usuário com seus posts (se não tiver post retorna null)
+  async show(req: Request, res: Response) {
+    try {
+      const { id } = req.params;
+      const user = await userRepository.findOne({
+        where: { id: Number(id) },
+        relations: ["posts"],
+      });
+
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
       }
 
-      const user = await repo.createUser(name, email, password, phone, role);
+      return res.status(200).json(user);
+    } catch (error) {
+      console.error("Internal server error\nError: ", error);
+      return res.status(500).json({ message: "Internal server error" });
+    }
+  }
+
+  // Criar novo usuário (POST /users)
+  /*
+  INSERT INTO users (name, email) 
+  VALUES (?, ?)
+*/
+  // Verifica se email já existe antes de inserir
+  async create(req: Request, res: Response) {
+    try {
+      const { name, email, password } = req.body;
+
+      if (!name || !email || !password) {
+        return res
+          .status(400)
+          .json({ message: "Name email and password are required" });
+      }
+
+      const userExists = await userRepository.findOneBy({ email: email });
+      if (userExists) {
+        return res.status(409).json({ message: "Email already in use" });
+      }
+
+      const user = userRepository.create({ name, email, password });
+      await userRepository.save(user);
+
       return res.status(201).json(user);
     } catch (error) {
-      return res.status(500).json({ message: "Erro ao registrar", error });
+      console.error("Internal server error", error);
+      return res.status(500).json({ message: "Internal server error" });
     }
   }
 
-  static async login(req: Request, res: Response): Promise<Response> {
-    try {
-      const { email, password } = req.body;
+  // Atualizar usuário (PATCH /users/:id)
+  /*
+  SELECT * FROM users WHERE id = ?;
 
-      const user = await repo.findUserByEmail(email);
+  [opcional] SELECT * FROM users WHERE email = ?;
+
+  UPDATE users 
+  SET name = ?, email = ? 
+  WHERE id = ?
+*/
+  // Atualiza apenas os campos fornecidos
+  async update(req: Request, res: Response) {
+    try {
+      const { id } = req.params;
+      const { name, email, password } = req.body;
+
+      const user = await userRepository.findOneBy({ id: Number(id) });
+
       if (!user) {
-        return res.status(404).json({ message: "Usuário não encontrado" });
+        return res.status(404).json({ message: "User not found" });
       }
 
-      const isValid = await bcrypt.compare(password, user.password);
-      if (!isValid) {
-        return res.status(401).json({ message: "Senha inválida" });
+      if (name) {
+        user.name = name;
       }
 
-      const token = generateToken({
-        id: user.id,
-        email: user.email,
-        role: user.role,
-      });
+      if (password) {
+        user.password = password;
+      }
 
-      return res.json({ message: "Login realizado", token });
+      if (email) {
+        const emailExists = await userRepository.findOneBy({ email });
+        if (emailExists && emailExists.id !== user.id) {
+          return res
+            .status(409)
+            .json({ message: "Email already in use by another user" });
+        }
+        user.email = email;
+      }
+
+      await userRepository.save(user);
+      return res.status(200).json(user);
     } catch (error) {
-      return res.status(500).json({ message: "Erro no login", error });
+      console.error("Internal server error", error);
+      return res.status(500).json({ message: "Internal server error" });
     }
   }
 
-  static async getAll(req: Request, res: Response): Promise<Response> {
+  // Deletar usuário (DELETE /users/:id)
+  /*
+  SELECT * FROM users WHERE id = ?;
+
+  DELETE FROM users WHERE id = ?
+*/
+  // Remove o usuário se ele existir
+  async delete(req: Request, res: Response) {
     try {
-      const users = await repo.findAllUsers();
-      return res.json(users);
+      const { id } = req.params;
+      const user = await userRepository.findOneBy({ id: Number(id) });
+
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      await userRepository.remove(user);
+      return res.status(204).send(); // No Content
     } catch (error) {
+      console.error("Internal server error", error);
+      return res.status(500).json({ message: "Internal server error" });
+    }
+  }
+
+  async login(req: Request, res: Response): Promise<Response> {
+    const { email, password } = req.body;
+
+    if (!email || !password) {
       return res
-        .status(500)
-        .json({ message: "Erro ao buscar usuários", error });
+        .status(400)
+        .json({ message: "Email and password are required!" });
     }
-  }
 
-  static async getById(req: Request, res: Response): Promise<Response> {
-    try {
-      const id = parseInt(req.params.id);
-      const user = await repo.findUserById(id);
+    const user = await userRepository.findOneBy({ email });
 
-      if (!user) {
-        return res.status(404).json({ message: "Usuário não encontrado" });
-      }
-
-      return res.json(user);
-    } catch (error) {
-      return res.status(500).json({ message: "Erro ao buscar usuário", error });
+    if (!user) {
+      return res.status(404).json({ message: "User not found!" });
     }
-  }
 
-  static async update(req: Request, res: Response): Promise<Response> {
-    try {
-      const id = parseInt(req.params.id);
-      const { name, email, password, phone, role } = req.body;
+    const isValid = await bcrypt.compare(password, user.password);
 
-      const updated = await repo.updateUser(id, {
-        name,
-        email,
-        password,
-        phone,
-        role,
-      });
-
-      if (!updated) {
-        return res.status(404).json({ message: "Usuário não encontrado" });
-      }
-
-      return res.json({ message: "Usuário atualizado", updated });
-    } catch (error) {
-      return res.status(500).json({ message: "Erro ao atualizar", error });
+    if (!isValid) {
+      return res.status(401).json({ message: "Access denied!" });
     }
-  }
 
-  static async delete(req: Request, res: Response): Promise<Response> {
-    try {
-      const id = parseInt(req.params.id);
-      const deleted = await repo.deleteUser(id);
+    const token = generateToken({
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      role: user.role,
+    });
 
-      if (!deleted) {
-        return res.status(404).json({ message: "Usuário não encontrado" });
-      }
-
-      return res.json({ message: "Usuário deletado" });
-    } catch (error) {
-      return res.status(500).json({ message: "Erro ao deletar", error });
-    }
+    return res.status(200).json({ message: "Logged successfully", token: token });
   }
 }
 ```
@@ -299,16 +433,25 @@ export class AuthMiddleware {
 ```ts
 import { Router } from "express";
 import { UserController } from "../controllers/UserController";
-import { AuthMiddleware } from "../middlewares/AuthMiddleware";
+import { AuthMiddleware } from "../middlewares/authMiddleware";
 
-const router = Router();
-const middleware = new AuthMiddleware();
+const routes = Router();
+const userController = new UserController();
+const authMiddleware = new AuthMiddleware();
 
-router.post("/register", UserController.register);
-router.post("/login", UserController.login);
-router.get("/users", middleware.authenticateToken, UserController.getAll);
+// Todas as rotas com `authMiddleware.authenticateToken` são protegidas
+// Ou seja só podem ser acessadas após ser efetuado o login.
+// As rotas com authMiddleware.isAdmin, além de autenticadas só podem ser acessadas por usuário do tipo Admin.
 
-export default router;
+// Rotas de Usuários
+routes.get("/users", authMiddleware.authenticateToken ,userController.list); // Listar todos
+routes.get("/users/:id", authMiddleware.authenticateToken, authMiddleware.isAdmin, userController.show); // Mostrar um
+routes.post("/users", userController.create); // Criar
+routes.patch("/users/:id", authMiddleware.authenticateToken, userController.update); // Atualizar
+routes.delete("/users/:id", authMiddleware.authenticateToken, userController.delete); // Deletar
+routes.post("/login", userController.login); // Logar
+
+export default routes;
 ```
 
 ---
